@@ -1,0 +1,29 @@
+Missing observations: 
+Removed Vacancy ID, myCC StudentView, position, employer, employer ID
+when did they start running wecan as a tag? 
+No data on clicks until cell 5343 - cannot run regression analysis until 2nd January 2020 (No job listings on NYD)
+Removing all countries except UK
+'WeCan not implemented until 25th March 2022 - so removed all cells before 21st March 2022 (Assuming mgt decision made on the Monday)
+Username , UserID dropped - However, for employee monitoring, a dataset including this in the future would be very useful
+Removed all regions except the United Kingdom - Degrees of freedom too small to make a meaningful comparison
+Weird cells - Do I remove or change? Probably remove for simplicity and time efficiency
+Cell 4363 - Gives UK towns, but placed as Ireland 
+Removed expiry date
+
+Do we keep academic year?
+- Keeping academic year - Helps track long-term trends, helps idntify whether job listing receive more engagement over multiple hiring cycles. 
+- Keeping publish date - Recruitment cycles vary - exact publication date is critical since interest in job listings fluctuate over time. 
+
+Econometric model 
+- Define the panel structure (see word doc)
+- Doesn't have firm-fixed effects - How do we get around this (Employee size) - Could look at each employer, and then create my own variable? - This will take some time. 
+
+Which econometric model do I use?
+- Sensitivity analysis with model type (Start with baseline - OLS panel with fixed effects, then Poisson/negative binomial as clicks are count data, then heterogeneous effects model, then IV model?)
+- How do I construct the NLP in R? This will probably be a session from home. 
+- Number of positons - is this available to students when applying? 
+
+- Renumeration
+- Do I normalise values? 
+
+Positions valued 'competitive' - Put NA temporarily - Or could research the salary 
