@@ -1,0 +1,103 @@
+library(dplyr)
+library(stringr)
+library(stringi)  # For better regex handling
+library(readxl)
+library(writexl)
+
+# Load dataset
+file_path <- "salary_standardise.xlsx"
+df <- read_excel(file_path, sheet = 1)
+
+# Ensure column names are clean
+colnames(df) <- make.names(colnames(df), unique = TRUE)
+
+# Identify the column containing remuneration data
+salary_column <- "Remuneration"
+
+# Function to standardise salary
+standardise_salary <- function(value) {
+    if (is.na(value) || value == "") return(NA)  # Handle missing values
+    
+    # Convert to lowercase & remove extra spaces
+    value <- tolower(str_trim(as.character(value)))  
+    
+    # **Fix formatting issues**
+    value <- gsub("[–—]", "-", value)  # Convert en/em dashes to hyphens
+    value <- gsub("\\s+", " ", value)  # Remove excess spaces
+    value <- gsub(",", "", value)  # Remove commas to ensure numeric conversion
+    value <- gsub("£", "", value)  # Remove currency symbol before number extraction
+    
+    # **Handle Unpaid roles**
+    if (grepl("unpaid|voluntary", value, ignore.case = TRUE)) return(0)
+    
+    # **Handle Competitive / Negotiable roles (return NA)**
+    if (grepl("competitive|tbd|negotiable|doe|dependent on experience", value, ignore.case = TRUE)) return(NA)
+    
+    # **Prioritise "per annum" if both "per annum" & "per hour" exist**
+    if (grepl("per annum|p\\.a\\.|pa", value) & grepl("per hour|p/h|hourly", value)) {
+        annual_salary <- as.numeric(str_extract(value, "\\d{4,6}"))  # Extract first valid salary
+        return(annual_salary)
+    }
+    
+    # **Handle Salary Ranges - Always take the midpoint**
+    if (grepl("\\d{4,6}\\s*[-to]+\\s*\\d{4,6}", value)) {
+        numbers <- as.numeric(unlist(str_extract_all(value, "\\d{4,6}")))
+        if (length(numbers) == 2) {
+            return(mean(numbers, na.rm = TRUE))  # Take midpoint of range
+        }
+    }
+    
+    # **Handle Fixed Salaries (`£15,000 p.a.` or standalone numbers like 26000)**
+    if (grepl("^\\d{4,6}$", value) || grepl("\\d{4,6}\\s*p\\.a\\.|pa", value)) {
+        fixed_salary <- as.numeric(str_extract(value, "\\d{4,6}"))
+        return(fixed_salary)
+    }
+    
+    # **Handle "pro rata" salaries - Leave blank (NA)**
+    if (grepl("pro rata", value)) {
+        return(NA)
+    }
+    
+    # **Handle "Up to" or "Starting from" salaries** (process the number normally)
+    if (grepl("up to|starting from", value)) {
+        extracted_salary <- as.numeric(str_extract(value, "\\d{1,3}\\.\\d{1,2}|\\d{1,3}"))  # Extract number including decimals
+        if (!is.na(extracted_salary) & extracted_salary < 500) {
+            return(extracted_salary * 37.5 * 52)  # Convert hourly to annual if applicable
+        }
+        return(extracted_salary)
+    }
+    
+    # **Handle Hourly Rates (Extract number and convert to annual salary)**
+    if (grepl("per hour|p/h|hourly|h", value)) {
+        hourly_rate <- as.numeric(str_extract(value, "\\d{1,3}\\.\\d{1,2}|\\d{1,3}"))  # Extract number including decimals
+        if (!is.na(hourly_rate) & hourly_rate < 500) {  # Prevent unrealistic hourly rates
+            return(hourly_rate * 37.5 * 52)  # Convert to annual salary
+        }
+    }
+    
+    # **Ignore bonuses (extract only base salary)**
+    if (grepl("\\d{4,6}\\s*\\+\\s*\\d+% bonus", value)) {
+        base_salary <- as.numeric(str_extract(value, "\\d{4,6}"))
+        return(base_salary)
+    }
+    
+    # **If unmatched, return NA**
+    return(NA)
+}
+
+# Apply function to dataset
+df <- df %>%
+    mutate(Standardised_Remuneration = sapply(.data[[salary_column]], standardise_salary))
+
+# Save back to Excel
+output_file <- "salary_standardise_cleaned.xlsx"
+write_xlsx(df, output_file)
+
+# Print confirmation
+print(paste("Standardised data saved to", output_file))
+
+# Display summary statistics for validation
+summary(df$Standardised_Remuneration)
+
+# Identify anomalies in the dataset
+df %>% filter(Standardised_Remuneration > 500000 | Standardised_Remuneration < 1000)
