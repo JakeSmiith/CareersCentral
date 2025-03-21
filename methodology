@@ -27,3 +27,16 @@ Which econometric model do I use?
 - Do I normalise values? 
 
 Positions valued 'competitive' - Put NA temporarily - Or could research the salary 
+
+
+NLP 
+Collect Data via A/B Testing - Randomize job postings where the only variation is the inclusion or exclusion (or intensity) of action words. This helps in establishing a causal relationship
+Feature Extraction - Use NLP techniques to extract and quantify the presence of action words along with other textual features.
+Estimate Nuisance Parameters - Use machine learning models to estimate the impact of all other variables on clickthrough rate.
+Apply the DML Framework - With the nuisance parameters controlled for, estimate the effect of the action words on clickthrough rate, yielding a robust causal inference.
+
+Full concatenation for holistic model
+Keep them seperate for section-specific insights: Introduction, details, call-to-action
+
+
+
