@@ -66,17 +66,26 @@ process_chunk <- function(x, pos) {
   # Lowercase
   x <- x %>% mutate(full_text_lower = str_to_lower(full_text))
   
-  # Tokenize, remove stopwords, lemmatize, and count action words
+  # Tokenize, remove stopwords, lemmatize, and compute counts
   x <- x %>%
     rowwise() %>%
     mutate(
       tokens = list(
         str_split(full_text_lower, "\\W+")[[1]] %>%
-          (\(v) v[v != ""])() %>%
-          (\(v) v[!v %in% stop_words$word])() %>%
-          lemmatize_words()
+          (\(v) v[v != ""])() %>%                # remove empty tokens
+          (\(v) v[!v %in% stop_words$word])() %>% # remove stopwords
+          lemmatize_words()                       # lemmatize
       ),
-      action_count = sum(tokens %in% action_words)
+      # Number of action words in this posting
+      action_count = sum(tokens %in% action_words),
+      # Total tokens (after cleaning)
+      total_tokens = length(tokens),
+      # Proportion of action words (if total_tokens = 0, proportion = 0)
+      proportion_action = if_else(
+        total_tokens > 0,
+        action_count / total_tokens,
+        0
+      )
     ) %>%
     ungroup()
   
@@ -162,7 +171,13 @@ print("Top tokens frequency:")
 print(head(token_freq, 10))
 
 #############################################
-# 11. (Optional) Save Results
+# 11. Save Results
 #############################################
-# write_csv(df_combined, "C:/Users/jakes/Downloads/Processed_NLP.csv")
-# write_csv(token_freq, "C:/Users/jakes/Downloads/Token_Frequency.csv")
+output_csv <- "C:/Users/jakes/Downloads/Processed_NLP_with_proportion.csv"
+write_csv(df_combined, output_csv)
+log_info("Saved final data with proportion of action words to {output_csv}")
+
+# Optionally save the token frequency table as well
+freq_csv <- "C:/Users/jakes/Downloads/Token_Frequency.csv"
+write_csv(token_freq, freq_csv)
+log_info("Saved token frequency table to {freq_csv}")
