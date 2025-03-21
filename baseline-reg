@@ -1,0 +1,104 @@
+#############################################
+# 1. Load Necessary Libraries
+#############################################
+# If not installed, uncomment to install:
+# install.packages(c("readxl", "dplyr", "fixest", "broom", "kableExtra"))
+
+library(readxl)
+library(dplyr)
+library(fixest)
+library(broom)
+library(knitr)
+library(kableExtra)
+
+#############################################
+# 2. Import the Excel Data
+#############################################
+df_raw <- read_excel(
+  path = "C:/Users/jakes/Downloads/careerscentral.xlsx", # Adjust path if needed
+  sheet = 1,         # Change if your data is on another sheet
+  col_names = TRUE
+)
+
+#############################################
+# 3. Select & Rename Key Columns
+#############################################
+# Example references (adjust if needed):
+#   - Column A: vacancy_id (panel ID)
+#   - Column G: WeCan
+#   - Column I: total_views
+#   - Column R: modified_renumeration
+#   - Column W: academic_year
+#   - Column X: publish_date (dd/mm/yyyy)
+#   - Column AM: proportion_action
+
+df <- df_raw %>%
+  select(
+    vacancy_id           = 1,   # Column A
+    WeCan                = 7,   # Column G
+    total_views          = 9,   # Column I
+    modified_renumeration = 18, # Column R
+    academic_year        = 23,  # Column W
+    publish_date         = 24,  # Column X
+    proportion_action    = 39   # Column AM
+  )
+
+#############################################
+# 4. Data Cleaning / Type Conversions
+#############################################
+df <- df %>%
+  mutate(
+    # Parse date if stored as dd/mm/yyyy
+    publish_date  = as.Date(publish_date, format = "%d/%m/%Y"),
+    
+    # Convert WeCan to factor if it's a binary indicator
+    WeCan         = as.factor(WeCan),
+    
+    # Convert academic_year to factor if it's categorical
+    academic_year = as.factor(academic_year)
+  )
+
+#############################################
+# 5. Negative Binomial Fixed-Effects Model
+#############################################
+# We specify 'negbin' for overdispersion, with vacancy_id as fixed effect.
+
+model_nb <- feglm(
+  formula = total_views ~ WeCan + modified_renumeration +
+            proportion_action + publish_date + academic_year |
+            vacancy_id,
+  data    = df,
+  family  = "negbin"  # fixest uses "negbin" instead of nbinom2()
+)
+
+#############################################
+# 6. Summarize Results with Broom + KableExtra
+#############################################
+res <- tidy(model_nb, conf.int = TRUE)
+
+res_table <- res %>%
+  mutate(
+    estimate  = round(estimate, 3),
+    conf.low  = round(conf.low, 3),
+    conf.high = round(conf.high, 3),
+    p.value   = round(p.value, 3)
+  )
+
+# Print to console
+print(res_table)
+
+# (Optional) A more formatted table
+res_table %>%
+  kable("html", caption = "Negative Binomial FE Model Results") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+
+#############################################
+# 7. Interpretation
+#############################################
+# - 'estimate' shows log-changes in expected total_views, controlling 
+#   for vacancy-level fixed effects.
+# - 'conf.low' and 'conf.high' are 95% CI bounds.
+# - 'p.value' indicates statistical significance.
+# - If you'd like to see Incidence Rate Ratios (IRRs), exponentiate
+#   'estimate', 'conf.low', and 'conf.high'.
+#############################################
