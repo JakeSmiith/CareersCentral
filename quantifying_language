@@ -1,0 +1,168 @@
+#############################################
+# 1. Load Necessary Libraries
+#############################################
+# If you don't have tidyr installed, uncomment and install:
+# install.packages(c("readxl", "readr", "dplyr", "stringr", "tidytext", 
+#                    "textstem", "logger", "tidyr"))
+
+library(readxl)
+library(readr)
+library(dplyr)
+library(stringr)
+library(tidytext)
+library(textstem)
+library(logger)
+library(tidyr)  # for unite()
+
+# Start logging and timing
+log_info("Script started.")
+start_time <- Sys.time()
+
+#############################################
+# 2. Convert Excel to CSV (Local Windows Path)
+#############################################
+excel_path <- "C:/Users/jakes/Downloads/NLP.xlsx"  # <-- Use your local path here
+csv_file   <- "C:/Users/jakes/Downloads/NLP.csv"    # <-- CSV will be written here
+
+df_excel <- tryCatch({
+  read_excel(excel_path, col_names = TRUE)
+}, error = function(e) {
+  log_error("Error reading Excel file: {e$message}")
+  stop(e)
+})
+
+write_csv(df_excel, csv_file)
+rm(df_excel)
+gc()
+log_info("Converted Excel to CSV and saved as {csv_file}")
+
+#############################################
+# 3. Define Action Words
+#############################################
+action_words <- c(
+  "apply", "register", "join", "start", "build",
+  "develop", "discover", "create", "grow", "explore",
+  "drive", "lead", "support", "engage", "execute"
+)
+action_words <- lemmatize_words(action_words)
+log_info("Action words dictionary: {paste(action_words, collapse=', ')}")
+
+#############################################
+# 4. Chunk Processing Callback
+#############################################
+process_chunk <- function(x, pos) {
+  # Convert "No Data" to NA in all columns
+  x <- x %>%
+    mutate(across(everything(), ~ ifelse(. == "No Data", NA, .))) 
+  
+  # Convert all columns to character
+  x <- x %>%
+    mutate(across(everything(), as.character))
+  
+  # Use tidyr::unite() to merge all columns into one, skipping NA
+  x <- x %>%
+    unite("full_text", everything(), sep = " ", na.rm = TRUE)
+  
+  # Lowercase
+  x <- x %>% mutate(full_text_lower = str_to_lower(full_text))
+  
+  # Tokenize, remove stopwords, lemmatize, and count action words
+  x <- x %>%
+    rowwise() %>%
+    mutate(
+      tokens = list(
+        str_split(full_text_lower, "\\W+")[[1]] %>%
+          (\(v) v[v != ""])() %>%
+          (\(v) v[!v %in% stop_words$word])() %>%
+          lemmatize_words()
+      ),
+      action_count = sum(tokens %in% action_words)
+    ) %>%
+    ungroup()
+  
+  x
+}
+
+# We'll store processed chunks here
+all_chunks <- list()
+
+# DataFrameCallback for read_csv_chunked
+callback <- DataFrameCallback$new(function(x, pos) {
+  log_info("Processing CSV chunk at position {pos}")
+  processed <- process_chunk(x, pos)
+  all_chunks[[length(all_chunks) + 1]] <<- processed
+  NULL
+})
+
+#############################################
+# 5. Read CSV in Chunks
+#############################################
+chunk_size <- 100  # Adjust as needed; with more RAM, you could go larger
+tryCatch({
+  read_csv_chunked(
+    file = csv_file,
+    callback = callback,
+    chunk_size = chunk_size,
+    col_types = cols(.default = "c")
+  )
+}, error = function(e) {
+  log_error("Error processing CSV chunks: {e$message}")
+  stop(e)
+})
+
+#############################################
+# 6. Combine Processed Chunks
+#############################################
+df_combined <- bind_rows(all_chunks)
+rm(all_chunks)
+gc()
+log_info("All CSV chunks combined. Total processed rows: {nrow(df_combined)}")
+
+#############################################
+# 7. Compute Intensity Score (0-10 Scale)
+#############################################
+min_count <- min(df_combined$action_count, na.rm = TRUE)
+max_count <- max(df_combined$action_count, na.rm = TRUE)
+log_info("Global action_count: min = {min_count}, max = {max_count}")
+
+range_val <- max_count - min_count
+if (range_val > 0) {
+  # Scale each row's action_count from 0 to 10
+  df_combined$action_intensity <- round(
+    ((df_combined$action_count - min_count) / range_val) * 10,
+    0
+  )
+} else {
+  # If min_count == max_count, everyone gets 0
+  df_combined$action_intensity <- 0
+}
+
+#############################################
+# 8. Token Frequency Table
+#############################################
+global_tokens <- unlist(df_combined$tokens, recursive = TRUE, use.names = FALSE)
+global_tokens <- global_tokens[!is.na(global_tokens) & global_tokens != ""]
+token_freq <- as.data.frame(table(global_tokens), stringsAsFactors = FALSE) %>%
+  rename(word = global_tokens, n = Freq) %>%
+  arrange(desc(n))
+log_info("Global token frequency table has {nrow(token_freq)} unique tokens.")
+
+#############################################
+# 9. Log Completion
+#############################################
+end_time <- Sys.time()
+log_info("Script completed in {round(difftime(end_time, start_time, units = 'secs'), 2)} seconds.")
+
+#############################################
+# 10. Inspect Results
+#############################################
+print("Action intensity score distribution:")
+print(table(df_combined$action_intensity))
+print("Top tokens frequency:")
+print(head(token_freq, 10))
+
+#############################################
+# 11. (Optional) Save Results
+#############################################
+# write_csv(df_combined, "C:/Users/jakes/Downloads/Processed_NLP.csv")
+# write_csv(token_freq, "C:/Users/jakes/Downloads/Token_Frequency.csv")
