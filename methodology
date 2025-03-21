@@ -37,6 +37,9 @@ Apply the DML Framework - With the nuisance parameters controlled for, estimate 
 
 Full concatenation for holistic model
 Keep them seperate for section-specific insights: Introduction, details, call-to-action
+- CareersCentral should start gathering data on firm-size (use Linkedin firm size for guidance)
 
-
+Technique - Negative binomial fixed effects model - control for unobserved heterogeneity at the vacancy level, while still accounting for overdispersion.
+to do: 
+- Show Poisson model variance greater than mean
 
