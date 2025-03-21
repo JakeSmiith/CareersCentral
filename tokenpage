@@ -1,0 +1,119 @@
+############################################################
+# Shiny App for Token Frequency Search
+############################################################
+
+library(shiny)
+library(dplyr)
+
+#----------------------------------------------------------
+# 0. Make sure `token_freq` is available in the environment
+#    This might be from your NLP script, or you can load it 
+#    from a CSV if you've saved it.
+#----------------------------------------------------------
+# Example (if you saved token_freq as CSV):
+# token_freq <- read.csv("C:/Users/jakes/Downloads/Token_Frequency.csv",
+#                        stringsAsFactors = FALSE)
+
+#----------------------------------------------------------
+# 1. Define the User Interface
+#----------------------------------------------------------
+ui <- fluidPage(
+  # Custom CSS styling embedded in HTML
+  tags$head(
+    tags$style(HTML("
+      body {
+        background-color: #f8f9fa; /* Subtle gray background */
+        font-family: 'Open Sans', sans-serif;
+      }
+      h1, h2, h3 {
+        color: #007bff; 
+        text-align: center;
+        margin-top: 30px;
+      }
+      .custom-panel {
+        background-color: #ffffff;
+        border-radius: 5px;
+        padding: 20px;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        margin: 20px auto;
+        max-width: 600px;
+      }
+      .search-label {
+        font-weight: bold;
+        color: #555;
+      }
+      .search-result {
+        margin-top: 20px;
+      }
+      .btn-custom {
+        background-color: #007bff;
+        color: #fff;
+        border: none;
+        cursor: pointer;
+      }
+      .btn-custom:hover {
+        background-color: #0056b3;
+      }
+      .table > tbody > tr > td {
+        vertical-align: middle;
+      }
+      .table th {
+        background-color: #e9ecef;
+      }
+    "))
+  ),
+  
+  # Page title
+  titlePanel("Token Frequency Search"),
+  
+  # Main content
+  fluidRow(
+    column(
+      width = 12,
+      div(class = "custom-panel",
+          h2("Search for a Token"),
+          textInput(
+            inputId = "search_token",
+            label = div(class = "search-label", "Enter a token or partial match:"),
+            value = ""
+          ),
+          actionButton("search_btn", "Search", class = "btn-custom"),
+          
+          # Display the table of results
+          div(class = "search-result",
+              tableOutput("search_result")
+          )
+      )
+    )
+  )
+)
+
+#----------------------------------------------------------
+# 2. Define the Server Logic
+#----------------------------------------------------------
+server <- function(input, output, session) {
+  
+  # React to the Search button click
+  observeEvent(input$search_btn, {
+    req(input$search_token)
+    
+    # Convert user input to lowercase to match your stored tokens
+    search_term <- tolower(input$search_token)
+    
+    # Filter the token_freq table based on partial match
+    # (If you only want exact matches, use == instead of grepl)
+    filtered <- token_freq %>%
+      filter(grepl(search_term, word, ignore.case = TRUE)) %>%
+      arrange(desc(n))
+    
+    # Render the top results in a table
+    output$search_result <- renderTable({
+      head(filtered, 20)
+    })
+  })
+}
+
+#----------------------------------------------------------
+# 3. Run the Shiny App
+#----------------------------------------------------------
+shinyApp(ui = ui, server = server)
