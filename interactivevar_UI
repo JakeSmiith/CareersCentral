@@ -1,0 +1,105 @@
+library(shiny)
+library(MASS)
+library(broom)
+library(dplyr)
+library(yardstick)
+library(bslib)
+
+# ======= 1. Load Data Outside UI (Pre-loaded) =======
+df_raw <- readxl::read_excel(
+  path = "C:/Users/jakes/Downloads/careerscentral.xlsx",
+  sheet = 1,
+  col_names = TRUE
+)
+
+df_sub <- df_raw[44792:nrow(df_raw), ]
+
+df <- data.frame(
+  total_views           = as.numeric(df_sub[[9]]),
+  proportion_action     = as.numeric(df_sub[[39]]),
+  academic_year         = as.factor(df_sub[[23]]),
+  publish_date          = as.Date(df_sub[[24]], format = "%d/%m/%Y"),
+  renumeration_standard = as.numeric(df_sub[[18]]),
+  WeCan_binary          = as.factor(df_sub[[42]])
+)
+
+df <- na.omit(df)
+
+# ======= 2. Build Shiny App =======
+ui <- fluidPage(
+  theme = bs_theme(bootswatch = "cosmo"),
+  tags$head(
+    tags$style(HTML("
+      .container-fluid { max-width: 1300px; margin: auto; padding-top: 30px; }
+      h2 { font-weight: 600; margin-bottom: 20px; }
+      .card { background-color: #f9f9f9; padding: 20px; border-radius: 10px; margin-bottom: 30px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+      .btn-primary { background-color: #0073e6; border-color: #0073e6; }
+      .btn-primary:hover { background-color: #005bb5; border-color: #005bb5; }
+    "))
+  ),
+
+  titlePanel("🧠 Dynamic Negative Binomial Modelling"),
+  fluidRow(
+    column(4,
+           div(class = "card",
+               h4("Step 1: Choose Predictors"),
+               checkboxGroupInput("predictors", "Select variables:",
+                                  choices = setdiff(names(df), "total_views"),
+                                  selected = c("proportion_action", "academic_year")),
+               actionButton("runModel", "Run Regression", class = "btn btn-primary")
+           )
+    ),
+    column(8,
+           div(class = "card",
+               h4("📊 Model Summary"),
+               tableOutput("modelTable")
+           ),
+           div(class = "card",
+               h4("📈 Evaluation Metrics"),
+               tableOutput("metricsTable")
+           )
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  model_result <- eventReactive(input$runModel, {
+    req(input$predictors)
+    
+    fmla <- as.formula(paste("total_views ~", paste(input$predictors, collapse = " + ")))
+    model <- glm.nb(fmla, data = df)
+    
+    df_out <- df
+    df_out$predicted <- predict(model, type = "response")
+    
+    null_model <- glm.nb(total_views ~ 1, data = df)
+
+    metrics <- data.frame(
+      Metric = c("Log-Likelihood", "AIC", "McFadden R²", "RMSE", "MAE"),
+      Value = round(c(
+        logLik(model),
+        AIC(model),
+        1 - (logLik(model) / logLik(null_model)),
+        rmse_vec(df_out$total_views, df_out$predicted),
+        mae_vec(df_out$total_views, df_out$predicted)
+      ), 4)
+    )
+
+    summary_table <- broom::tidy(model, conf.int = TRUE) %>%
+      mutate(across(where(is.numeric), ~ round(., 4)))
+
+    list(summary = summary_table, metrics = metrics)
+  })
+
+  output$modelTable <- renderTable({
+    req(model_result())
+    model_result()$summary
+  })
+
+  output$metricsTable <- renderTable({
+    req(model_result())
+    model_result()$metrics
+  })
+}
+
+shinyApp(ui, server)
