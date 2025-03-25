@@ -1,0 +1,25 @@
+Sub AbsoluteWeCanFix()
+    Dim ws As Worksheet
+    Dim i As Long
+    Dim maxRow As Long
+
+    Set ws = ThisWorkbook.Sheets("Sheet2") ' Change sheet name as needed
+
+    ' Go all the way to the last row of the sheet
+    maxRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+
+    ' Header
+    ws.Cells(1, 2).Value = "WeCan_binary"
+
+    ' Loop from row 2 to last used row in Col A
+    For i = 2 To maxRow
+        If Trim(ws.Cells(i, 1).Value) = "WeCan" Then
+            ws.Cells(i, 2).Value = 1
+        Else
+            ws.Cells(i, 2).Value = 0
+        End If
+    Next i
+
+    MsgBox "Column B updated perfectly ?"
+End Sub
+
