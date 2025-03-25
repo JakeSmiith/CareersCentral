@@ -43,3 +43,11 @@ Technique - Negative binomial fixed effects model - control for unobserved heter
 to do: 
 - Show Poisson model variance greater than mean
 
+How do we interpret negative binomial model? 
+
+Change the way number of positions is constructed
+Need to change for diversity positions - UI - went on careerscentral website; it's not very clear - It's ineffective in its current form
+
+Zero-Inflated Negative Binomial (ZINB) - 2-part model - Does WeCan_binary affect whether a vacancy gets any interest at all, and — if yes — how much interest?”
+Logit vs probit for zero-inflation part - You're modelling whether a job vacancy is structurally unviewed, which reflects a binary operational process, and simple exposure errors. 
+Difference between posting date and expiry date - could lead to students not being interested - Vacancy been available for a long time. 
