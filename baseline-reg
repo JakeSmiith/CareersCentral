@@ -13,45 +13,46 @@ library(kableExtra)
 library(yardstick)  # For RMSE / MAE metrics
 
 #############################################
-# 1. Read Excel & Subset Rows
+# 1. Read Excel & Subset from Row 44,792
 #############################################
 df_raw <- read_excel(
-    path = "C:/Users/jakes/Downloads/careerscentral.xlsx",
-    sheet = 1,
-    col_names = TRUE
+  path = "C:/Users/jakes/Downloads/careerscentral.xlsx",
+  sheet = 1,
+  col_names = TRUE
 )
 
-# Keep only rows from 27,853 to the end:
-df_sub <- df_raw[27853:nrow(df_raw), ]
+df_sub <- df_raw[44792:nrow(df_raw), ]
 
 #############################################
-# 2. Build a New Data Frame by Index (Without renumeration_standard)
+# 2. Build Clean Data Frame by Column Index
 #############################################
-# Adjust these indices if needed:
 #   9  = total_views
 #   39 = proportion_action
 #   23 = academic_year
 #   24 = publish_date
+#   18 = renumeration_standard
+#   42 = WeCan_binary
 
 df <- data.frame(
-    total_views       = as.numeric(df_sub[[9]]),
-    proportion_action = as.numeric(df_sub[[39]]),
-    academic_year     = as.factor(df_sub[[23]]),
-    publish_date      = as.Date(df_sub[[24]], format = "%d/%m/%Y")
+  total_views           = as.numeric(df_sub[[9]]),
+  proportion_action     = as.numeric(df_sub[[39]]),
+  academic_year         = as.factor(df_sub[[23]]),
+  publish_date          = as.Date(df_sub[[24]], format = "%d/%m/%Y"),
+  renumeration_standard = as.numeric(df_sub[[18]]),
+  WeCan_binary          = as.factor(df_sub[[42]])
 )
 
-# 🔧 Remove rows with missing values (to align with glm.nb internals)
+# 🔧 Remove rows with missing values
 df <- na.omit(df)
-
-# Optional check:
 cat("Remaining rows after removing NAs:", nrow(df), "\n")
 
 #############################################
-# 3. Fit Negative Binomial Model (No FE)
+# 3. Fit Negative Binomial Model (No Fixed Effects)
 #############################################
 model_nb <- glm.nb(
-    formula = total_views ~ proportion_action + academic_year + publish_date,
-    data    = df
+  formula = total_views ~ proportion_action + academic_year +
+            publish_date + renumeration_standard + WeCan_binary,
+  data    = df
 )
 
 #############################################
@@ -60,27 +61,25 @@ model_nb <- glm.nb(
 res <- tidy(model_nb, conf.int = TRUE)
 
 res_table <- res %>%
-    mutate(
-        estimate  = round(estimate, 4),
-        conf.low  = round(conf.low, 4),
-        conf.high = round(conf.high, 4),
-        p.value   = round(p.value, 4)
-    )
+  mutate(
+    estimate  = round(estimate, 4),
+    conf.low  = round(conf.low, 4),
+    conf.high = round(conf.high, 4),
+    p.value   = round(p.value, 4)
+  )
 
-# Print results to console
 print(res_table)
 
-# (Optional) Nicely formatted HTML table
 res_table %>%
-    kable("html", caption = "Negative Binomial Model (No Fixed Effects, No renumeration_standard)") %>%
-    kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+  kable("html", caption = "Negative Binomial Model (No Fixed Effects, with WeCan_binary)") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
 
 #############################################
 # 5. Evaluate Model Efficacy
 #############################################
 
 # Predicted vs. actual
-df$predicted <- predict(model_nb, type = "response")  # type = "response" gives predicted count
+df$predicted <- predict(model_nb, type = "response")
 
 # Log-likelihood
 logLik_val <- logLik(model_nb)
@@ -88,7 +87,7 @@ logLik_val <- logLik(model_nb)
 # AIC
 aic_val <- AIC(model_nb)
 
-# Pseudo R-squared (McFadden)
+# Pseudo R² (McFadden)
 null_model <- glm.nb(total_views ~ 1, data = df)
 r2_mcfadden <- 1 - (logLik(model_nb) / logLik(null_model))
 
@@ -96,16 +95,15 @@ r2_mcfadden <- 1 - (logLik(model_nb) / logLik(null_model))
 rmse_val <- yardstick::rmse_vec(df$total_views, df$predicted)
 mae_val  <- yardstick::mae_vec(df$total_views, df$predicted)
 
-# Create summary table
+# Summary table
 model_metrics <- data.frame(
-    Metric = c("Log-Likelihood", "AIC", "McFadden R²", "RMSE", "MAE"),
-    Value  = round(c(logLik_val, aic_val, r2_mcfadden, rmse_val, mae_val), 4)
+  Metric = c("Log-Likelihood", "AIC", "McFadden R²", "RMSE", "MAE"),
+  Value  = round(c(logLik_val, aic_val, r2_mcfadden, rmse_val, mae_val), 4)
 )
 
 # Print summary
 print(model_metrics)
 
-# (Optional) Nicely formatted HTML
 model_metrics %>%
-    kable("html", caption = "Model Evaluation Metrics") %>%
-    kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+  kable("html", caption = "Model Evaluation Metrics") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
