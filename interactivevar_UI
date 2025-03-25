@@ -6,7 +6,7 @@ library(yardstick)
 library(bslib)
 library(readxl)
 
-# ======= 1. Load Data Outside UI (Pre-loaded) =======
+# ======= 1. Load Data (Outside UI) =======
 df_raw <- read_excel(
   path = "C:/Users/jakes/Downloads/careerscentral.xlsx",
   sheet = 1,
@@ -16,79 +16,120 @@ df_raw <- read_excel(
 df_sub <- df_raw[44792:nrow(df_raw), ]
 
 df <- data.frame(
-  total_views               = as.numeric(df_sub[[9]]),
-  distinct_views            = as.numeric(df_sub[[10]]),
-  interested_clicks         = as.numeric(df_sub[[11]]),
+  # Targets
+  total_views                = as.numeric(df_sub[[9]]),
+  distinct_views             = as.numeric(df_sub[[10]]),
+  interested_clicks          = as.numeric(df_sub[[11]]),
   distinct_interested_clicks = as.numeric(df_sub[[12]]),
-  proportion_action         = as.numeric(df_sub[[39]]),
-  academic_year             = as.factor(df_sub[[23]]),
-  publish_date              = as.Date(df_sub[[24]], format = "%d/%m/%Y"),
-  renumeration_standard     = as.numeric(df_sub[[18]]),
-  WeCan_binary              = as.factor(df_sub[[42]]),
-  Main_Opportunity_Type     = as.factor(df_sub[[6]]),
-  Vacancy_Type              = as.factor(df_sub[[8]]),
-  User_Name                 = as.factor(df_sub[[14]]),
-  Number_of_Positions       = as.factor(df_sub[[22]]),
-  Expiry_date               = as.Date(df_sub[[25]], format = "%d/%m/%Y")
+
+  # Continuous Explanatory
+  proportion_action          = as.numeric(df_sub[[39]]),
+  action_intensity           = as.numeric(df_sub[[40]]),
+  renumeration_standard      = as.numeric(df_sub[[18]]),
+
+  # Categorical Explanatory
+  academic_year              = as.factor(df_sub[[23]]),
+  WeCan_binary               = as.factor(df_sub[[42]]),
+  Main_Opportunity_Type      = as.factor(df_sub[[6]]),
+  Vacancy_Type               = as.factor(df_sub[[8]]),
+  User_Name                  = as.factor(df_sub[[14]]),
+  Number_of_Positions        = as.factor(df_sub[[22]]),
+
+  # Dates
+  publish_date               = as.Date(df_sub[[24]], format = "%d/%m/%Y"),
+  Expiry_date                = as.Date(df_sub[[25]], format = "%d/%m/%Y")
 )
 
 df <- na.omit(df)
 
-# ======= 2. Build Shiny UI =======
+# ======= 2. UI =======
 ui <- fluidPage(
   theme = bs_theme(bootswatch = "cosmo"),
-  tags$head(
-    tags$style(HTML("
-      .container-fluid { max-width: 1300px; margin: auto; padding-top: 30px; }
-      h2 { font-weight: 600; margin-bottom: 20px; }
-      .card { background-color: #f9f9f9; padding: 20px; border-radius: 10px; margin-bottom: 30px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-      .btn-primary { background-color: #0073e6; border-color: #0073e6; }
-      .btn-primary:hover { background-color: #005bb5; border-color: #005bb5; }
-    "))
-  ),
-
-  titlePanel("🧠 Dynamic Negative Binomial Modelling"),
-
-  fluidRow(
-    column(4,
-           div(class = "card",
-               h4("Step 1: Configure Model"),
-
-               selectInput("target", "Select output variable:",
-                           choices = c(
-                             "total_views",
-                             "distinct_views",
-                             "interested_clicks",
-                             "distinct_interested_clicks"
-                           ),
-                           selected = "total_views"),
-
-               checkboxGroupInput("predictors", "Select explanatory variables:",
-                                  choices = setdiff(names(df), c(
-                                    "total_views", "distinct_views",
-                                    "interested_clicks", "distinct_interested_clicks"
-                                  )),
-                                  selected = c("proportion_action", "academic_year")),
-
-               actionButton("runModel", "Run Regression", class = "btn btn-primary")
-           )
-    ),
-    column(8,
-           div(class = "card",
-               h4("📊 Model Summary"),
-               tableOutput("modelTable")
-           ),
-           div(class = "card",
-               h4("📈 Evaluation Metrics"),
-               tableOutput("metricsTable")
-           )
-    )
-  )
+  uiOutput("appUI")  # Dynamically render login or main UI
 )
 
-# ======= 3. Server Logic =======
+# ======= 3. Server =======
 server <- function(input, output, session) {
+  credentials <- reactiveValues(authenticated = FALSE)
+
+  # Login screen
+  output$appUI <- renderUI({
+    if (!credentials$authenticated) {
+      fluidPage(
+        titlePanel("🔐 Secure Access - CareerCentral"),
+        fluidRow(
+          column(4, offset = 4,
+                 wellPanel(
+                   textInput("user", "Username:"),
+                   passwordInput("pass", "Password:"),
+                   actionButton("login", "Login", class = "btn btn-primary"),
+                   textOutput("loginMessage")
+                 )
+          )
+        )
+      )
+    } else {
+      # Main app once logged in
+      fluidPage(
+        tags$head(
+          tags$style(HTML("
+            .container-fluid { max-width: 1300px; margin: auto; padding-top: 30px; }
+            h2 { font-weight: 600; margin-bottom: 20px; }
+            .card { background-color: #f9f9f9; padding: 20px; border-radius: 10px; margin-bottom: 30px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+            .btn-primary { background-color: #0073e6; border-color: #0073e6; }
+            .btn-primary:hover { background-color: #005bb5; border-color: #005bb5; }
+          "))
+        ),
+        titlePanel("🧠 Dynamic Negative Binomial Modelling"),
+
+        fluidRow(
+          column(4,
+                 div(class = "card",
+                     h4("Step 1: Configure Model"),
+                     selectInput("target", "Select output variable:",
+                                 choices = c(
+                                   "total_views",
+                                   "distinct_views",
+                                   "interested_clicks",
+                                   "distinct_interested_clicks"
+                                 ),
+                                 selected = "total_views"),
+                     checkboxGroupInput("predictors", "Select explanatory variables:",
+                                        choices = setdiff(names(df), c(
+                                          "total_views", "distinct_views",
+                                          "interested_clicks", "distinct_interested_clicks"
+                                        )),
+                                        selected = c("proportion_action", "academic_year")),
+                     actionButton("runModel", "Run Regression", class = "btn btn-primary")
+                 )
+          ),
+          column(8,
+                 div(class = "card",
+                     h4("📊 Model Summary"),
+                     tableOutput("modelTable")
+                 ),
+                 div(class = "card",
+                     h4("📈 Evaluation Metrics"),
+                     tableOutput("metricsTable")
+                 )
+          )
+        )
+      )
+    }
+  })
+
+  # Check login credentials
+  observeEvent(input$login, {
+    if (input$user == "careercentral" && input$pass == "test1") {
+      credentials$authenticated <- TRUE
+    } else {
+      output$loginMessage <- renderText("❌ Invalid username or password. Try again.")
+    }
+  })
+
+  # Run regression logic only when logged in
   model_result <- eventReactive(input$runModel, {
+    req(credentials$authenticated)
     req(input$predictors, input$target)
 
     fmla <- as.formula(paste(input$target, "~", paste(input$predictors, collapse = " + ")))
@@ -107,21 +148,23 @@ server <- function(input, output, session) {
         1 - (logLik(model) / logLik(null_model)),
         rmse_vec(df_out[[input$target]], df_out$predicted),
         mae_vec(df_out[[input$target]], df_out$predicted)
-      ), 4)
+      ), 3)
     )
 
     summary_table <- broom::tidy(model, conf.int = TRUE) %>%
-      mutate(across(where(is.numeric), round, 4))
+      mutate(across(where(is.numeric), ~ round(., 3)))
 
     list(summary = summary_table, metrics = metrics)
   })
 
   output$modelTable <- renderTable({
+    req(credentials$authenticated)
     req(model_result())
     model_result()$summary
   })
 
   output$metricsTable <- renderTable({
+    req(credentials$authenticated)
     req(model_result())
     model_result()$metrics
   })
