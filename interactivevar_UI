@@ -4,9 +4,10 @@ library(broom)
 library(dplyr)
 library(yardstick)
 library(bslib)
+library(readxl)
 
 # ======= 1. Load Data Outside UI (Pre-loaded) =======
-df_raw <- readxl::read_excel(
+df_raw <- read_excel(
   path = "C:/Users/jakes/Downloads/careerscentral.xlsx",
   sheet = 1,
   col_names = TRUE
@@ -15,17 +16,25 @@ df_raw <- readxl::read_excel(
 df_sub <- df_raw[44792:nrow(df_raw), ]
 
 df <- data.frame(
-  total_views           = as.numeric(df_sub[[9]]),
-  proportion_action     = as.numeric(df_sub[[39]]),
-  academic_year         = as.factor(df_sub[[23]]),
-  publish_date          = as.Date(df_sub[[24]], format = "%d/%m/%Y"),
-  renumeration_standard = as.numeric(df_sub[[18]]),
-  WeCan_binary          = as.factor(df_sub[[42]])
+  total_views               = as.numeric(df_sub[[9]]),
+  distinct_views            = as.numeric(df_sub[[10]]),
+  interested_clicks         = as.numeric(df_sub[[11]]),
+  distinct_interested_clicks = as.numeric(df_sub[[12]]),
+  proportion_action         = as.numeric(df_sub[[39]]),
+  academic_year             = as.factor(df_sub[[23]]),
+  publish_date              = as.Date(df_sub[[24]], format = "%d/%m/%Y"),
+  renumeration_standard     = as.numeric(df_sub[[18]]),
+  WeCan_binary              = as.factor(df_sub[[42]]),
+  Main_Opportunity_Type     = as.factor(df_sub[[6]]),
+  Vacancy_Type              = as.factor(df_sub[[8]]),
+  User_Name                 = as.factor(df_sub[[14]]),
+  Number_of_Positions       = as.factor(df_sub[[22]]),
+  Expiry_date               = as.Date(df_sub[[25]], format = "%d/%m/%Y")
 )
 
 df <- na.omit(df)
 
-# ======= 2. Build Shiny App =======
+# ======= 2. Build Shiny UI =======
 ui <- fluidPage(
   theme = bs_theme(bootswatch = "cosmo"),
   tags$head(
@@ -39,13 +48,28 @@ ui <- fluidPage(
   ),
 
   titlePanel("🧠 Dynamic Negative Binomial Modelling"),
+
   fluidRow(
     column(4,
            div(class = "card",
-               h4("Step 1: Choose Predictors"),
-               checkboxGroupInput("predictors", "Select variables:",
-                                  choices = setdiff(names(df), "total_views"),
+               h4("Step 1: Configure Model"),
+
+               selectInput("target", "Select output variable:",
+                           choices = c(
+                             "total_views",
+                             "distinct_views",
+                             "interested_clicks",
+                             "distinct_interested_clicks"
+                           ),
+                           selected = "total_views"),
+
+               checkboxGroupInput("predictors", "Select explanatory variables:",
+                                  choices = setdiff(names(df), c(
+                                    "total_views", "distinct_views",
+                                    "interested_clicks", "distinct_interested_clicks"
+                                  )),
                                   selected = c("proportion_action", "academic_year")),
+
                actionButton("runModel", "Run Regression", class = "btn btn-primary")
            )
     ),
@@ -62,17 +86,18 @@ ui <- fluidPage(
   )
 )
 
+# ======= 3. Server Logic =======
 server <- function(input, output, session) {
   model_result <- eventReactive(input$runModel, {
-    req(input$predictors)
-    
-    fmla <- as.formula(paste("total_views ~", paste(input$predictors, collapse = " + ")))
+    req(input$predictors, input$target)
+
+    fmla <- as.formula(paste(input$target, "~", paste(input$predictors, collapse = " + ")))
     model <- glm.nb(fmla, data = df)
-    
+
     df_out <- df
     df_out$predicted <- predict(model, type = "response")
-    
-    null_model <- glm.nb(total_views ~ 1, data = df)
+
+    null_model <- glm.nb(as.formula(paste(input$target, "~ 1")), data = df)
 
     metrics <- data.frame(
       Metric = c("Log-Likelihood", "AIC", "McFadden R²", "RMSE", "MAE"),
@@ -80,13 +105,13 @@ server <- function(input, output, session) {
         logLik(model),
         AIC(model),
         1 - (logLik(model) / logLik(null_model)),
-        rmse_vec(df_out$total_views, df_out$predicted),
-        mae_vec(df_out$total_views, df_out$predicted)
+        rmse_vec(df_out[[input$target]], df_out$predicted),
+        mae_vec(df_out[[input$target]], df_out$predicted)
       ), 4)
     )
 
     summary_table <- broom::tidy(model, conf.int = TRUE) %>%
-      mutate(across(where(is.numeric), ~ round(., 4)))
+      mutate(across(where(is.numeric), round, 4))
 
     list(summary = summary_table, metrics = metrics)
   })
