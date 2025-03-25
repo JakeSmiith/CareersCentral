@@ -1,12 +1,39 @@
 library(shiny)
+library(DBI)
+library(RSQLite)
+library(sodium)
 library(MASS)
 library(broom)
 library(dplyr)
 library(yardstick)
 library(bslib)
 library(readxl)
+library(lubridate)
 
-# ======= 1. Load Data (Outside UI) =======
+# ======= 1. Setup SQLite DB =======
+db_path <- "users.db"
+con <- dbConnect(SQLite(), db_path)
+
+# Create tables if not exist
+dbExecute(con, "
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT UNIQUE NOT NULL,
+  password TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)")
+
+dbExecute(con, "
+CREATE TABLE IF NOT EXISTS sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  logout_time TIMESTAMP,
+  duration_minutes REAL,
+  FOREIGN KEY(user_id) REFERENCES users(id)
+)")
+
+# ======= 2. Load Data =======
 df_raw <- read_excel(
   path = "C:/Users/jakes/Downloads/careerscentral.xlsx",
   sheet = 1,
@@ -16,91 +43,78 @@ df_raw <- read_excel(
 df_sub <- df_raw[44792:nrow(df_raw), ]
 
 df <- data.frame(
-  # Targets
   total_views                = as.numeric(df_sub[[9]]),
   distinct_views             = as.numeric(df_sub[[10]]),
   interested_clicks          = as.numeric(df_sub[[11]]),
   distinct_interested_clicks = as.numeric(df_sub[[12]]),
-
-  # Continuous Explanatory
   proportion_action          = as.numeric(df_sub[[39]]),
   action_intensity           = as.numeric(df_sub[[40]]),
   renumeration_standard      = as.numeric(df_sub[[18]]),
-
-  # Categorical Explanatory
   academic_year              = as.factor(df_sub[[23]]),
   WeCan_binary               = as.factor(df_sub[[42]]),
   Main_Opportunity_Type      = as.factor(df_sub[[6]]),
   Vacancy_Type               = as.factor(df_sub[[8]]),
   User_Name                  = as.factor(df_sub[[14]]),
   Number_of_Positions        = as.factor(df_sub[[22]]),
-
-  # Dates
   publish_date               = as.Date(df_sub[[24]], format = "%d/%m/%Y"),
   Expiry_date                = as.Date(df_sub[[25]], format = "%d/%m/%Y")
 )
-
 df <- na.omit(df)
 
-# ======= 2. UI =======
+# ======= 3. UI =======
 ui <- fluidPage(
   theme = bs_theme(bootswatch = "cosmo"),
-  uiOutput("appUI")  # Dynamically render login or main UI
+  uiOutput("appUI")
 )
 
-# ======= 3. Server =======
+# ======= 4. Server =======
 server <- function(input, output, session) {
-  credentials <- reactiveValues(authenticated = FALSE)
+  credentials <- reactiveValues(authenticated = FALSE, user_id = NULL, login_time = NULL)
 
-  # Login screen
+  # UI switching logic
   output$appUI <- renderUI({
     if (!credentials$authenticated) {
       fluidPage(
-        titlePanel("🔐 Secure Access - CareerCentral"),
+        titlePanel("🔐 Login / Sign Up"),
         fluidRow(
           column(4, offset = 4,
-                 wellPanel(
-                   textInput("user", "Username:"),
-                   passwordInput("pass", "Password:"),
-                   actionButton("login", "Login", class = "btn btn-primary"),
-                   textOutput("loginMessage")
+                 tabsetPanel(
+                   tabPanel("Login",
+                            textInput("login_user", "Username"),
+                            passwordInput("login_pass", "Password"),
+                            actionButton("login_btn", "Login"),
+                            textOutput("login_msg")
+                   ),
+                   tabPanel("Sign Up",
+                            textInput("signup_user", "New Username"),
+                            passwordInput("signup_pass", "New Password"),
+                            actionButton("signup_btn", "Create Account"),
+                            textOutput("signup_msg")
+                   )
                  )
           )
         )
       )
     } else {
-      # Main app once logged in
       fluidPage(
-        tags$head(
-          tags$style(HTML("
-            .container-fluid { max-width: 1300px; margin: auto; padding-top: 30px; }
-            h2 { font-weight: 600; margin-bottom: 20px; }
-            .card { background-color: #f9f9f9; padding: 20px; border-radius: 10px; margin-bottom: 30px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-            .btn-primary { background-color: #0073e6; border-color: #0073e6; }
-            .btn-primary:hover { background-color: #005bb5; border-color: #005bb5; }
-          "))
-        ),
-        titlePanel("🧠 Dynamic Negative Binomial Modelling"),
-
+        tags$head(tags$style(HTML("
+          .container-fluid { max-width: 1300px; margin: auto; padding-top: 30px; }
+        "))),
+        titlePanel(paste("🧠 Welcome,", input$login_user)),
         fluidRow(
           column(4,
                  div(class = "card",
                      h4("Step 1: Configure Model"),
                      selectInput("target", "Select output variable:",
-                                 choices = c(
-                                   "total_views",
-                                   "distinct_views",
-                                   "interested_clicks",
-                                   "distinct_interested_clicks"
-                                 ),
-                                 selected = "total_views"),
+                                 choices = c("total_views", "distinct_views",
+                                             "interested_clicks", "distinct_interested_clicks")),
                      checkboxGroupInput("predictors", "Select explanatory variables:",
                                         choices = setdiff(names(df), c(
                                           "total_views", "distinct_views",
                                           "interested_clicks", "distinct_interested_clicks"
                                         )),
                                         selected = c("proportion_action", "academic_year")),
-                     actionButton("runModel", "Run Regression", class = "btn btn-primary")
+                     actionButton("runModel", "Run Regression")
                  )
           ),
           column(8,
@@ -111,6 +125,10 @@ server <- function(input, output, session) {
                  div(class = "card",
                      h4("📈 Evaluation Metrics"),
                      tableOutput("metricsTable")
+                 ),
+                 div(class = "card",
+                     h4("🔚 Logout"),
+                     actionButton("logout", "End Session", class = "btn btn-danger")
                  )
           )
         )
@@ -118,19 +136,53 @@ server <- function(input, output, session) {
     }
   })
 
-  # Check login credentials
-  observeEvent(input$login, {
-    if (input$user == "careercentral" && input$pass == "test1") {
-      credentials$authenticated <- TRUE
+  # ======= 5. Sign Up =======
+  observeEvent(input$signup_btn, {
+    existing <- dbGetQuery(con, "SELECT * FROM users WHERE username = ?", params = list(input$signup_user))
+    if (nrow(existing) > 0) {
+      output$signup_msg <- renderText("⚠️ Username already taken.")
     } else {
-      output$loginMessage <- renderText("❌ Invalid username or password. Try again.")
+      hash <- password_store(input$signup_pass)
+      dbExecute(con, "INSERT INTO users (username, password) VALUES (?, ?)", 
+                params = list(input$signup_user, hash))
+      output$signup_msg <- renderText("✅ Account created! You can now log in.")
     }
   })
 
-  # Run regression logic only when logged in
+  # ======= 6. Login =======
+  observeEvent(input$login_btn, {
+    user <- dbGetQuery(con, "SELECT * FROM users WHERE username = ?", params = list(input$login_user))
+    if (nrow(user) == 1 && password_verify(user$password[1], input$login_pass)) {
+      credentials$authenticated <- TRUE
+      credentials$user_id <- user$id[1]
+      credentials$login_time <- Sys.time()
+      dbExecute(con, "INSERT INTO sessions (user_id, login_time) VALUES (?, ?)", 
+                params = list(credentials$user_id, credentials$login_time))
+    } else {
+      output$login_msg <- renderText("❌ Invalid username or password.")
+    }
+  })
+
+  # ======= 7. Logout and Session Duration =======
+  observeEvent(input$logout, {
+    logout_time <- Sys.time()
+    duration <- as.numeric(difftime(logout_time, credentials$login_time, units = "mins"))
+    session_id <- dbGetQuery(con, "
+      SELECT MAX(id) as last_id FROM sessions WHERE user_id = ?", 
+      params = list(credentials$user_id)
+    )$last_id
+
+    dbExecute(con, "UPDATE sessions SET logout_time = ?, duration_minutes = ? WHERE id = ?",
+              params = list(logout_time, duration, session_id))
+
+    credentials$authenticated <- FALSE
+    credentials$user_id <- NULL
+    credentials$login_time <- NULL
+  })
+
+  # ======= 8. Regression =======
   model_result <- eventReactive(input$runModel, {
-    req(credentials$authenticated)
-    req(input$predictors, input$target)
+    req(credentials$authenticated, input$predictors, input$target)
 
     fmla <- as.formula(paste(input$target, "~", paste(input$predictors, collapse = " + ")))
     model <- glm.nb(fmla, data = df)
@@ -151,20 +203,18 @@ server <- function(input, output, session) {
       ), 3)
     )
 
-    summary_table <- broom::tidy(model, conf.int = TRUE) %>%
-      mutate(across(where(is.numeric), ~ round(., 3)))
+    summary_table <- tidy(model, conf.int = TRUE) %>%
+      mutate(across(where(is.numeric), round, 3))
 
     list(summary = summary_table, metrics = metrics)
   })
 
   output$modelTable <- renderTable({
-    req(credentials$authenticated)
     req(model_result())
     model_result()$summary
   })
 
   output$metricsTable <- renderTable({
-    req(credentials$authenticated)
     req(model_result())
     model_result()$metrics
   })
