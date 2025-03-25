@@ -1,9 +1,7 @@
 #############################################
 # 1. Load Necessary Libraries
 #############################################
-# If not installed, uncomment to install:
-# install.packages(c("readxl", "dplyr", "fixest", "broom", "kableExtra"))
-
+# install.packages(c("readxl", "dplyr", "fixest", "broom", "knitr", "kableExtra"))
 library(readxl)
 library(dplyr)
 library(fixest)
@@ -15,32 +13,28 @@ library(kableExtra)
 # 2. Import the Excel Data
 #############################################
 df_raw <- read_excel(
-  path = "C:/Users/jakes/Downloads/careerscentral.xlsx", # Adjust path if needed
-  sheet = 1,         # Change if your data is on another sheet
+  path = "C:/Users/jakes/Downloads/careerscentral.xlsx",
+  sheet = 1,
   col_names = TRUE
 )
 
 #############################################
 # 3. Select & Rename Key Columns
 #############################################
-# Example references (adjust if needed):
-#   - Column A: vacancy_id (panel ID)
-#   - Column G: WeCan
-#   - Column I: total_views
-#   - Column R: modified_renumeration
-#   - Column W: academic_year
-#   - Column X: publish_date (dd/mm/yyyy)
-#   - Column AM: proportion_action
+# Columns (based on your message):
+#   - A: vacancy_id (panel identifier)
+#   - I: total_views       (Dependent variable)
+#   - R: renumeration_standard
+#   - W: academic_year     (long-term variation)
+#   - X: publish_date      (short-term variation)
 
 df <- df_raw %>%
   select(
     vacancy_id           = 1,   # Column A
-    WeCan                = 7,   # Column G
     total_views          = 9,   # Column I
-    modified_renumeration = 18, # Column R
+    renumeration_standard = 18, # Column R
     academic_year        = 23,  # Column W
-    publish_date         = 24,  # Column X
-    proportion_action    = 39   # Column AM
+    publish_date         = 24   # Column X
   )
 
 #############################################
@@ -48,31 +42,51 @@ df <- df_raw %>%
 #############################################
 df <- df %>%
   mutate(
-    # Parse date if stored as dd/mm/yyyy
-    publish_date  = as.Date(publish_date, format = "%d/%m/%Y"),
+    # Ensure numeric
+    total_views          = as.numeric(total_views),
+    renumeration_standard = as.numeric(renumeration_standard),
     
-    # Convert WeCan to factor if it's a binary indicator
-    WeCan         = as.factor(WeCan),
+    # Convert academic_year to factor (only if it has 2+ distinct values)
+    academic_year        = as.factor(academic_year),
     
-    # Convert academic_year to factor if it's categorical
-    academic_year = as.factor(academic_year)
+    # Convert publish_date to Date
+    publish_date         = as.Date(publish_date, format = "%d/%m/%Y")
+  )
+
+# Optional: Check how many distinct values each variable has
+df %>%
+  summarise(
+    distinct_vacancy_id    = n_distinct(vacancy_id),
+    distinct_academic_year = n_distinct(academic_year),
+    distinct_publish_date  = n_distinct(publish_date)
+  )
+
+# If academic_year or publish_date has only 1 distinct value, 
+# it cannot be used as a factor in the model. You can either remove it 
+# or handle it differently.
+
+# For short-term variation, you might treat publish_date as a continuous variable:
+df <- df %>%
+  mutate(
+    publish_date_num = as.numeric(publish_date - min(publish_date, na.rm = TRUE))
   )
 
 #############################################
-# 5. Negative Binomial Fixed-Effects Model
+# 5. Negative Binomial Model with fixest
 #############################################
-# We specify 'negbin' for overdispersion, with vacancy_id as fixed effect.
+# Using feNmlm(..., family = "negbin") for a panel model with vacancy_id as the FE.
+# We'll include academic_year as a factor only if it has 2+ levels.
+# We'll include publish_date_num as a numeric variable for short-term variation.
 
-model_nb <- feglm(
-  formula = total_views ~ WeCan + modified_renumeration +
-            proportion_action + publish_date + academic_year |
-            vacancy_id,
-  data    = df,
-  family  = "negbin"  # fixest uses "negbin" instead of nbinom2()
+model_nb <- feNmlm(
+  fml = total_views ~ renumeration_standard + academic_year + publish_date_num |
+        vacancy_id,
+  data   = df,
+  family = "negbin"
 )
 
 #############################################
-# 6. Summarize Results with Broom + KableExtra
+# 6. Summarize Results
 #############################################
 res <- tidy(model_nb, conf.int = TRUE)
 
@@ -84,21 +98,10 @@ res_table <- res %>%
     p.value   = round(p.value, 3)
   )
 
-# Print to console
+# Print results to console
 print(res_table)
 
-# (Optional) A more formatted table
+# (Optional) Nicely formatted HTML table
 res_table %>%
   kable("html", caption = "Negative Binomial FE Model Results") %>%
   kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
-
-#############################################
-# 7. Interpretation
-#############################################
-# - 'estimate' shows log-changes in expected total_views, controlling 
-#   for vacancy-level fixed effects.
-# - 'conf.low' and 'conf.high' are 95% CI bounds.
-# - 'p.value' indicates statistical significance.
-# - If you'd like to see Incidence Rate Ratios (IRRs), exponentiate
-#   'estimate', 'conf.low', and 'conf.high'.
-#############################################
