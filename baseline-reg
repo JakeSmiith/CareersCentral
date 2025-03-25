@@ -2,7 +2,7 @@
 # 0. Install / Load Packages
 #############################################
 # Uncomment to install if missing:
-# install.packages(c("readxl", "MASS", "broom", "dplyr", "knitr", "kableExtra"))
+# install.packages(c("readxl", "MASS", "broom", "dplyr", "knitr", "kableExtra", "yardstick"))
 
 library(readxl)
 library(MASS)       # For glm.nb (Negative Binomial)
@@ -10,6 +10,7 @@ library(broom)      # For tidy() summaries
 library(dplyr)      # For mutate(), %>%, etc.
 library(knitr)
 library(kableExtra)
+library(yardstick)  # For RMSE / MAE metrics
 
 #############################################
 # 1. Read Excel & Subset Rows
@@ -39,6 +40,12 @@ df <- data.frame(
     publish_date      = as.Date(df_sub[[24]], format = "%d/%m/%Y")
 )
 
+# 🔧 Remove rows with missing values (to align with glm.nb internals)
+df <- na.omit(df)
+
+# Optional check:
+cat("Remaining rows after removing NAs:", nrow(df), "\n")
+
 #############################################
 # 3. Fit Negative Binomial Model (No FE)
 #############################################
@@ -66,4 +73,39 @@ print(res_table)
 # (Optional) Nicely formatted HTML table
 res_table %>%
     kable("html", caption = "Negative Binomial Model (No Fixed Effects, No renumeration_standard)") %>%
+    kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
+
+#############################################
+# 5. Evaluate Model Efficacy
+#############################################
+
+# Predicted vs. actual
+df$predicted <- predict(model_nb, type = "response")  # type = "response" gives predicted count
+
+# Log-likelihood
+logLik_val <- logLik(model_nb)
+
+# AIC
+aic_val <- AIC(model_nb)
+
+# Pseudo R-squared (McFadden)
+null_model <- glm.nb(total_views ~ 1, data = df)
+r2_mcfadden <- 1 - (logLik(model_nb) / logLik(null_model))
+
+# RMSE and MAE
+rmse_val <- yardstick::rmse_vec(df$total_views, df$predicted)
+mae_val  <- yardstick::mae_vec(df$total_views, df$predicted)
+
+# Create summary table
+model_metrics <- data.frame(
+    Metric = c("Log-Likelihood", "AIC", "McFadden R²", "RMSE", "MAE"),
+    Value  = round(c(logLik_val, aic_val, r2_mcfadden, rmse_val, mae_val), 4)
+)
+
+# Print summary
+print(model_metrics)
+
+# (Optional) Nicely formatted HTML
+model_metrics %>%
+    kable("html", caption = "Model Evaluation Metrics") %>%
     kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover"))
