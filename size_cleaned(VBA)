@@ -1,0 +1,29 @@
+Sub CategoriseEmployerSize()
+    Dim ws As Worksheet
+    Dim i As Long
+    Dim cellValue As String
+
+    Set ws = ActiveSheet
+
+    For i = 2 To 48470
+        cellValue = ws.Range("AR" & i).Value
+
+        Select Case True
+            Case InStr(1, cellValue, "Micro", vbTextCompare) > 0
+                ws.Range("AS" & i).Value = 1
+            Case InStr(1, cellValue, "Small", vbTextCompare) > 0
+                ws.Range("AS" & i).Value = 2
+            Case InStr(1, cellValue, "Medium", vbTextCompare) > 0
+                ws.Range("AS" & i).Value = 3
+            Case InStr(1, cellValue, "Large", vbTextCompare) > 0
+                ws.Range("AS" & i).Value = 4
+            Case InStr(1, cellValue, "Enterprise", vbTextCompare) > 0
+                ws.Range("AS" & i).Value = 5
+            Case Else
+                ws.Range("AS" & i).Value = "" ' or "Not Found" if you prefer
+        End Select
+    Next i
+
+    MsgBox "? Employer size categories written to AS2:AS48470.", vbInformation
+End Sub
+
